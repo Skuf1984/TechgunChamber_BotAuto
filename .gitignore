@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Build artifacts
+build/
+dist/
+
+# Runtime data (settings/stats are created on first launch)
+logs/
+settings.json
+
+# Binaries - distribute the .exe via GitHub Releases, not in git
+*.exe
+
+# Throwaway diagnostics
+_test_*.py
+
+# OS junk
+Thumbs.db
+desktop.ini

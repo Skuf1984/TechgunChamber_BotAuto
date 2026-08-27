@@ -1,0 +1,122 @@
+{
+  "window_title": "Minecraft",
+  "poll_interval": 0.35,
+  "anchor": {
+    "x": 252,
+    "y": 80,
+    "w": 398,
+    "h": 324
+  },
+  "rois": {
+    "power_scale": [
+      0.6834,
+      0.142,
+      0.0427,
+      0.1914
+    ],
+    "power_marker": [
+      0.6834,
+      0.097,
+      0.0352,
+      0.2364
+    ],
+    "luck_bar": [
+      0.4573,
+      0.358,
+      0.495,
+      0.0278
+    ],
+    "fail_bar": [
+      0.4573,
+      0.4074,
+      0.495,
+      0.0278
+    ]
+  },
+  "points": {
+    "power_plus": [
+      0.608,
+      0.2377
+    ],
+    "power_minus": [
+      0.6583,
+      0.2377
+    ]
+  },
+  "colors": {
+    "power_fill_ok": [
+      128,
+      255,
+      128
+    ],
+    "power_fill_bad": [
+      255,
+      127,
+      0
+    ],
+    "power_empty": [
+      55,
+      55,
+      55
+    ],
+    "marker": [
+      255,
+      0,
+      0
+    ],
+    "luck_fill": [
+      128,
+      255,
+      128
+    ],
+    "luck_empty": [
+      139,
+      139,
+      139
+    ],
+    "fail_fill": [
+      255,
+      128,
+      0
+    ],
+    "fail_empty": [
+      139,
+      139,
+      139
+    ],
+    "container_gray": [
+      198,
+      198,
+      198
+    ],
+    "track_gray": [
+      139,
+      139,
+      139
+    ]
+  },
+  "power": {
+    "steps": 10,
+    "default_level": 3,
+    "match_tolerance": 0.045,
+    "settle_seconds": 0.4,
+    "max_clicks_per_correction": 6,
+    "marker_tolerance": 70.0,
+    "reset_after_craft": true
+  },
+  "thresholds": {
+    "gui_gray_min_fraction": 0.12,
+    "craft_active_epsilon": 0.02,
+    "marker_tolerance": 70.0,
+    "stall_seconds": 60.0
+  },
+  "control": {
+    "enabled": false,
+    "action_interval": 0.45,
+    "require_foreground": true
+  },
+  "alerts": {
+    "beep": true,
+    "cooldown_seconds": 30.0
+  }
+}
