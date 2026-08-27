@@ -22,6 +22,10 @@
 
 Бот **читает интерфейс камеры с экрана** (захват пикселей окна) и **кликает мышкой** по кнопкам `+`/`−`. Никаких модов/инжектов в саму игру не ставится — только наблюдение и клики.
 
+Интерфейс реакционной камеры в игре:
+
+![Интерфейс реакционной камеры](screenshots/chamber_gui.png)
+
 Что именно читает бот (зоны):
 
 ![Зоны, которые читает бот](screenshots/chamber_zones.png)
@@ -116,6 +120,10 @@ pyinstaller --noconfirm --onefile --windowed --name ChamberBot ^
 ## How it works
 
 The bot **reads the chamber UI from the screen** (pixel capture of the window) and **clicks** the `+`/`−` buttons. No mods or injections are installed into the game — pure observation and clicks. Power ranges from **0 to 10**; the digit is recognized via templates.
+
+| Bot GUI | Chamber UI in game | Zones the bot reads |
+|---|---|---|
+| ![](screenshots/bot_gui.png) | ![](screenshots/chamber_gui.png) | ![](screenshots/chamber_zones.png) |
 
 ## Install & run
 
