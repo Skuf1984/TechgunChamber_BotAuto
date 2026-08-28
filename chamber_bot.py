@@ -493,10 +493,50 @@ class Watchdog:
         return self.read().power_fill
 
     def read_power_value(self):
-        """Read the actual power number shown beside the scale. (value, confidence)."""
+        """Read the actual power number shown beside the scale. (value, confidence).
+        The digit ROI is re-read from config.json each call so ROI-editor changes
+        take effect without a restart."""
         if not self.digit_templates:
             return None, 0.0
-        return digit.read_number(self.grab(), self.digit_templates)
+        return digit.read_number(self.grab(), self.digit_templates, digit.load_digit_roi_norm())
+
+    def try_reanchor(self):
+        """Re-detect the chamber container and update the anchor. Lets the bot cope
+        with the window being moved/resized without manual recalibration.
+
+        The saved panel template (panel_template.png) is matched first - it lands
+        the exact panel box the zones were tuned on, at any GUI scale. The grey
+        blob detector stays as a fallback when there is no template."""
+        import find_anchor  # local import to avoid a circular import at module load
+        import panel_match
+
+        now = time.time()
+        if now - getattr(self, "_last_reanchor", 0.0) < 3.0:
+            return False
+        self._last_reanchor = now
+        try:
+            left, top, width, height = window.client_rect_on_screen(self.hwnd)
+            with vision.ScreenCapture() as capture:
+                frame = capture.grab(left, top, width, height)
+            found = None
+            template = panel_match.load_template()
+            if template is not None:
+                found = panel_match.find_panel(frame, template)
+            if found is None:
+                found = find_anchor.find_container(frame)
+        except Exception:  # noqa: BLE001
+            return False
+        if found is None:
+            return False
+        x, y, w, h = found
+        self.cfg["anchor"] = {"x": x, "y": y, "w": w, "h": h}
+        try:
+            save_config(self.cfg, DEFAULT_CONFIG)
+        except Exception:  # noqa: BLE001
+            pass
+        log.info("re-anchored container to x%d y%d %dx%d", x, y, w, h)
+        self._emit("reanchored", {"x": x, "y": y, "w": w, "h": h})
+        return True
 
     def craft_active(self, state):
         epsilon = float(self.cfg["thresholds"]["craft_active_epsilon"])
@@ -504,6 +544,8 @@ class Watchdog:
 
     def evaluate(self, state):
         if not state.gui_open:
+            # the window may have moved/resized - try to find the container again
+            self.try_reanchor()
             return "WAIT"
 
         active = self.craft_active(state)

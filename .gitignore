@@ -16,6 +16,10 @@ settings.json
 
 # Throwaway diagnostics
 _test_*.py
+_diag_*.py
+
+# Legacy config backup (superseded by panel_template.*)
+config_template.json
 
 # OS junk
 Thumbs.db

@@ -5,6 +5,8 @@ The bot runs in a background thread (engine.BotEngine); the GUI only polls an ev
 queue, so tkinter is never touched from the bot thread.
 """
 
+import os
+import sys
 import threading
 import time
 import tkinter as tk
@@ -99,6 +101,234 @@ class ToolTip:
         if self.tip is not None:
             self.tip.destroy()
             self.tip = None
+
+
+def _dbg(msg):
+    try:
+        import os as _o
+
+        _o.makedirs(chamber_bot.LOG_DIR, exist_ok=True)
+        with open(_o.path.join(chamber_bot.LOG_DIR, "editor_debug.log"), "a", encoding="utf-8") as fh:
+            fh.write(msg + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+class RoiEditor:
+    """Interactive editor: drag the zone rectangles and +/- points on a snapshot of
+    the chamber panel, then save the adjusted positions back to config.json."""
+
+    SCALE = 2
+    HANDLE = 7
+    RECT_ROIS = ["power_scale", "power_marker", "luck_bar", "fail_bar", "digit"]
+    POINTS = ["power_plus", "power_minus"]
+    COLORS = {
+        "power_scale": "#22c55e", "power_marker": "#06b6d4", "luck_bar": "#3b82f6",
+        "fail_bar": "#f97316", "digit": "#d946ef",
+        "power_plus": "#eab308", "power_minus": "#eab308",
+    }
+    LABELS = {
+        "power_scale": "1 scale", "power_marker": "2 marker", "luck_bar": "3 luck",
+        "fail_bar": "4 fail", "digit": "5 digit",
+        "power_plus": "+", "power_minus": "-",
+    }
+
+    def __init__(self, master, tr):
+        self.tr = tr
+        self.master = master
+        self.items = {}
+        self._drag = None
+        try:
+            cfg = chamber_bot.load_config(chamber_bot.DEFAULT_CONFIG)
+            hwnd = window.find_window(cfg["window_title"])
+            left, top, self.panel_w, self.panel_h = vision.anchor_rect(
+                window.client_rect_on_screen(hwnd), chamber_bot.anchor_tuple(cfg))
+            with vision.ScreenCapture() as capture:
+                self.panel = capture.grab(left, top, self.panel_w, self.panel_h)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(APP_TITLE, str(exc))
+            return
+        if vision.is_blank(self.panel):
+            messagebox.showerror(APP_TITLE, tr("n_no_grey"))
+            return
+        self.cfg = cfg
+        self._build()
+
+    def _build(self):
+        from PIL import Image, ImageTk
+
+        # pick a scale so the editor stays a reasonable size; an oversized window
+        # gets clipped by the OS and stops receiving mouse events properly
+        try:
+            sw = self.master.winfo_screenwidth()
+            sh = self.master.winfo_screenheight()
+        except Exception:  # noqa: BLE001
+            sw, sh = 1280, 800
+        max_w = min(sw - 40, 1150)
+        max_h = min(sh - 140, 760)
+        S = 2
+        while S > 1 and (self.panel_w * S > max_w or self.panel_h * S > max_h):
+            S -= 1
+        self._scale = S
+        W, H = self.panel_w * S, self.panel_h * S
+        # trim the bottom of the editor: keep only up to the fail bar (zone 4)
+        # plus a small margin, so the player-inventory part isn't shown
+        fb = self.cfg["rois"].get("fail_bar")
+        if fb:
+            crop_h_panel = int((fb[1] + fb[3]) * self.panel_h) + 20
+            crop_h_panel = min(crop_h_panel, self.panel_h)
+        else:
+            crop_h_panel = self.panel_h
+        Hc = crop_h_panel * S
+        _dbg(f"BUILD screen={sw}x{sh} max={max_w}x{max_h} chosen_scale={S} crop_h={crop_h_panel}")
+        self.win = ctk.CTkToplevel(self.master)
+        self.win.title(self.tr("editor_title"))
+        self.win.configure(fg_color="#10131a")
+        # place beside the main window so they don't overlap and fight for events
+        try:
+            mx = self.master.winfo_rootx()
+            my = self.master.winfo_rooty()
+            mw = self.master.winfo_width()
+            sw = self.master.winfo_screenwidth()
+            px = mx + mw + 16
+            if px + self.panel_w * S + 40 > sw:
+                px = max(0, mx - self.panel_w * S - 16)
+            self.win.geometry(f"+{max(0, px)}+{max(0, my)}")
+        except Exception:  # noqa: BLE001
+            pass
+
+        bar = tk.Frame(self.win, bg="#10131a")
+        bar.pack(fill="x", padx=8, pady=6)
+        tk.Label(bar, text=self.tr("editor_hint"), bg="#10131a", fg="#9aa4b8",
+                 font=(BODY, 10), anchor="w", justify="left").pack(side="left", fill="x", expand=True)
+
+        self.canvas = tk.Canvas(self.win, width=W, height=Hc, bg="#000",
+                                highlightthickness=0, cursor="crosshair")
+        self.canvas.pack(padx=8, pady=(0, 8))
+
+        cropped_panel = self.panel[:crop_h_panel, :]
+        img = Image.fromarray(cropped_panel.astype("uint8")).resize((W, Hc), Image.NEAREST)
+        self._photo = ImageTk.PhotoImage(img)
+        self.canvas.create_image(0, 0, anchor="nw", image=self._photo)
+        _dbg(f"BUILD panel={self.panel_w}x{self.panel_h} canvas={W}x{Hc} "
+             f"topmost={self.win.attributes('-topmost')}")
+
+        for name in self.RECT_ROIS:
+            x, y, w, h = self.cfg["rois"][name]
+            self._add_rect(name, x * self.panel_w * S, y * self.panel_h * S,
+                           (x + w) * self.panel_w * S, (y + h) * self.panel_h * S)
+        for name in self.POINTS:
+            px, py = self.cfg["points"][name]
+            self._add_point(name, px * self.panel_w * S, py * self.panel_h * S)
+
+        self.canvas.bind("<ButtonPress-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._motion)
+        self.canvas.bind("<ButtonRelease-1>", self._release)
+        self.win.bind("<ButtonPress-1>", lambda e: _dbg(f"WINPRESS ({e.x},{e.y})"), add="+")
+        self.canvas.bind("<Enter>", lambda e: _dbg("CANVAS ENTER"), add="+")
+
+        btns = tk.Frame(self.win, bg="#10131a")
+        btns.pack(fill="x", padx=8, pady=(0, 10))
+        tk.Button(btns, text=self.tr("editor_save"), bg=ACCENT, fg="white",
+                  activebackground=ACCENT_H, relief="flat", padx=16, pady=6,
+                  font=(BODY, 11, "bold"), command=self._save).pack(side="left")
+        tk.Button(btns, text=self.tr("editor_cancel"), bg="#2a2f3a", fg="#cbd2e0",
+                  activebackground="#3a4050", relief="flat", padx=16, pady=6,
+                  font=(BODY, 11), command=self.win.destroy).pack(side="left", padx=8)
+
+        self.win.update_idletasks()
+        self.win.lift()
+        self.win.focus_force()
+
+    def _add_rect(self, name, x0, y0, x1, y1):
+        c = self.COLORS[name]
+        rid = self.canvas.create_rectangle(x0, y0, x1, y1, outline=c, width=2)
+        hid = self.canvas.create_rectangle(x1 - self.HANDLE, y1 - self.HANDLE, x1 + self.HANDLE,
+                                           y1 + self.HANDLE, fill=c, outline="white", width=1)
+        lid = self.canvas.create_text(x0 + 4, y0 + 4, anchor="nw", text=self.LABELS[name],
+                                      fill=c, font=(BODY, 10, "bold"))
+        self.items[name] = {"kind": "rect", "coords": [x0, y0, x1, y1],
+                            "rect": rid, "handle": hid, "label": lid}
+
+    def _add_point(self, name, cx, cy):
+        c = self.COLORS[name]
+        r = 9
+        ids = [
+            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline=c, width=2),
+            self.canvas.create_line(cx - r, cy, cx + r, cy, fill=c, width=1),
+            self.canvas.create_line(cx, cy - r, cx, cy + r, fill=c, width=1),
+            self.canvas.create_text(cx + r + 3, cy, anchor="w", text=self.LABELS[name],
+                                    fill=c, font=(BODY, 10, "bold")),
+        ]
+        self.items[name] = {"kind": "point", "coords": [cx, cy], "ids": ids}
+
+    def _hit(self, x, y):
+        for name, it in self.items.items():
+            if it["kind"] == "rect":
+                x0, y0, x1, y1 = it["coords"]
+                if abs(x - x1) <= self.HANDLE + 3 and abs(y - y1) <= self.HANDLE + 3:
+                    return name, "resize"
+                if x0 <= x <= x1 and y0 <= y <= y1:
+                    return name, "move"
+            else:
+                cx, cy = it["coords"]
+                if (x - cx) ** 2 + (y - cy) ** 2 <= 15 ** 2:
+                    return name, "move"
+        return None, None
+
+    def _press(self, e):
+        name, mode = self._hit(e.x, e.y)
+        _dbg(f"PRESS at ({e.x},{e.y}) -> hit={name} mode={mode}")
+        if name:
+            self._drag = (name, mode, e.x, e.y, list(self.items[name]["coords"]))
+
+    def _motion(self, e):
+        if not self._drag:
+            return
+        _dbg(f"MOTION at ({e.x},{e.y})")
+        name, mode, sx, sy, start = self._drag
+        dx, dy = e.x - sx, e.y - sy
+        it = self.items[name]
+        if it["kind"] == "rect":
+            x0, y0, x1, y1 = start
+            if mode == "move":
+                nx0, ny0, nx1, ny1 = x0 + dx, y0 + dy, x1 + dx, y1 + dy
+            else:
+                nx0, ny0 = x0, y0
+                nx1, ny1 = max(x0 + 8, x1 + dx), max(y0 + 8, y1 + dy)
+            it["coords"] = [nx0, ny0, nx1, ny1]
+            self.canvas.coords(it["rect"], nx0, ny0, nx1, ny1)
+            self.canvas.coords(it["handle"], nx1 - self.HANDLE, ny1 - self.HANDLE,
+                               nx1 + self.HANDLE, ny1 + self.HANDLE)
+            self.canvas.coords(it["label"], nx0 + 4, ny0 + 4)
+        else:
+            cx, cy = start
+            nx, ny = cx + dx, cy + dy
+            it["coords"] = [nx, ny]
+            r = 9
+            self.canvas.coords(it["ids"][0], nx - r, ny - r, nx + r, ny + r)
+            self.canvas.coords(it["ids"][1], nx - r, ny, nx + r, ny)
+            self.canvas.coords(it["ids"][2], nx, ny - r, nx, ny + r)
+            self.canvas.coords(it["ids"][3], nx + r + 3, ny)
+
+    def _release(self, _e):
+        self._drag = None
+
+    def _save(self):
+        S = self._scale
+        for name in self.RECT_ROIS:
+            x0, y0, x1, y1 = self.items[name]["coords"]
+            self.cfg["rois"][name] = [
+                round(x0 / (self.panel_w * S), 4), round(y0 / (self.panel_h * S), 4),
+                round((x1 - x0) / (self.panel_w * S), 4), round((y1 - y0) / (self.panel_h * S), 4),
+            ]
+        for name in self.POINTS:
+            cx, cy = self.items[name]["coords"]
+            self.cfg["points"][name] = [round(cx / (self.panel_w * S), 4),
+                                        round(cy / (self.panel_h * S), 4)]
+        chamber_bot.save_config(self.cfg, chamber_bot.DEFAULT_CONFIG)
+        self.win.destroy()
+        messagebox.showinfo(APP_TITLE, self.tr("editor_saved"))
 
 
 class App(ctk.CTk):
@@ -374,6 +604,22 @@ class App(ctk.CTk):
         self._glow(self.btn_verify, AMBER)
         ToolTip(self.btn_verify, lambda: self.tr("tip_verify"))
 
+        row3 = ctk.CTkFrame(card, fg_color="transparent")
+        row3.pack(fill="x", padx=18, pady=(4, 14))
+        row3.grid_columnconfigure((0, 1), weight=1, uniform="tool3")
+        self.btn_editor = ctk.CTkButton(row3, text=self.tr("btn_editor"), height=52,
+                                        fg_color=CARD2, hover_color=LINE, font=bf(13),
+                                        command=self._open_editor)
+        self.btn_editor.grid(row=0, column=0, padx=5, sticky="ew")
+        self._glow(self.btn_editor, GREEN)
+        ToolTip(self.btn_editor, lambda: self.tr("tip_editor"))
+        self.btn_template = ctk.CTkButton(row3, text=self.tr("btn_template"), height=52,
+                                          fg_color=CARD2, hover_color=LINE, font=bf(13),
+                                          command=self._save_template)
+        self.btn_template.grid(row=0, column=1, padx=5, sticky="ew")
+        self._glow(self.btn_template, GREEN)
+        ToolTip(self.btn_template, lambda: self.tr("tip_template"))
+
     # ------------------------------------------------------------------ log --
     def _build_log(self):
         self.btn_log = ctk.CTkButton(self, text=self.tr("show_log") + "  \u25be", fg_color=CARD,
@@ -548,26 +794,106 @@ class App(ctk.CTk):
 
     # ------------------------------------------------------------------ tools
     def _find_anchor(self):
+        if self.engine.is_running():
+            self._banner_show(self.tr("n_stop_before"), AMBER)
+            return
         threading.Thread(target=self._find_anchor_worker, daemon=True).start()
 
+    def _wait_corner(self, prompt_key, timeout=30):
+        """Ask the user to hover a corner and press SPACE. Returns (x, y) screen
+        coords, or None on timeout. Waits for SPACE to be released afterwards so a
+        held key can't immediately trigger the next corner."""
+        self.engine.events.put(("banner", {"text": self.tr(prompt_key), "color": AMBER}))
+        keys = mouse.HotkeyEdge("SPACE")
+        deadline = time.time() + timeout
+        pos = None
+        while time.time() < deadline:
+            if keys.pressed("SPACE"):
+                pos = window.cursor_pos()
+                break
+            time.sleep(0.03)
+        if pos is None:
+            return None
+        # wait until SPACE is released so the next corner needs a fresh press
+        release_deadline = time.time() + 5
+        while time.time() < release_deadline and mouse.key_down("SPACE"):
+            time.sleep(0.03)
+        return pos
+
     def _find_anchor_worker(self):
-        import numpy as np
         try:
             cfg = chamber_bot.load_config(chamber_bot.DEFAULT_CONFIG)
             hwnd = window.find_window(cfg["window_title"])
             left, top, width, height = window.client_rect_on_screen(hwnd)
+
+            # Try the saved panel template first: it re-finds the exact panel box
+            # (at any window size / GUI scale) without any corner prompts.
+            try:
+                import panel_match
+
+                template = panel_match.load_template()
+                if template is not None:
+                    with vision.ScreenCapture() as capture:
+                        frame = capture.grab(left, top, width, height)
+                    found = panel_match.find_panel(frame, template)
+                    if found is not None:
+                        x, y, w, h = found
+                        cfg["anchor"] = {"x": x, "y": y, "w": w, "h": h}
+                        chamber_bot.save_config(cfg, chamber_bot.DEFAULT_CONFIG)
+                        self.engine.events.put(("log", {"level": "INFO", "message": f"anchor set from template: {cfg['anchor']}"}))
+                        self.engine.events.put(("banner", {"text": self.tr("found_by_template", x=x, y=y), "color": GREEN}))
+                        return
+            except Exception as exc:  # noqa: BLE001
+                self.engine.events.put(("log", {"level": "WARNING", "message": f"template match failed: {exc}"}))
+
+            tl = self._wait_corner("anchor_tl")
+            if tl is None:
+                self.engine.events.put(("banner", {"text": self.tr("anchor_timeout"), "color": RED}))
+                return
+            br = self._wait_corner("anchor_br")
+            if br is None:
+                self.engine.events.put(("banner", {"text": self.tr("anchor_timeout"), "color": RED}))
+                return
+
+            x0, y0 = min(tl[0], br[0]), min(tl[1], br[1])
+            x1, y1 = max(tl[0], br[0]), max(tl[1], br[1])
+            ax, ay = x0 - left, y0 - top
+            aw, ah = x1 - x0, y1 - y0
+            if aw < 50 or ah < 50:
+                self.engine.events.put(("banner", {"text": "zone too small", "color": RED}))
+                return
+            cfg["anchor"] = {"x": ax, "y": ay, "w": aw, "h": ah}
+            chamber_bot.save_config(cfg, chamber_bot.DEFAULT_CONFIG)
+            self.engine.events.put(("log", {"level": "INFO", "message": f"anchor set: {cfg['anchor']}"}))
+            self.engine.events.put(("banner", {"text": self.tr("n_anchor_done"), "color": GREEN}))
+        except Exception as exc:  # noqa: BLE001
+            self.engine.events.put(("error", {"message": str(exc)}))
+
+    def _save_template(self):
+        if self.engine.is_running():
+            self._banner_show(self.tr("n_stop_before"), AMBER)
+            return
+        threading.Thread(target=self._save_template_worker, daemon=True).start()
+
+    def _save_template_worker(self):
+        """Capture the panel at the current anchor and store it as the reference
+        template that 'Find window' and auto re-anchor align to."""
+        try:
+            import panel_match
+
+            cfg = chamber_bot.load_config(chamber_bot.DEFAULT_CONFIG)
+            hwnd = window.find_window(cfg["window_title"])
+            left, top, panel_w, panel_h = vision.anchor_rect(
+                window.client_rect_on_screen(hwnd), chamber_bot.anchor_tuple(cfg))
             with vision.ScreenCapture() as capture:
-                frame = capture.grab(left, top, width, height)
-            grey = np.abs(frame.astype(np.int32) - 198).max(axis=2) <= 16
-            if int(grey.sum()) < 2000:
+                panel = capture.grab(left, top, panel_w, panel_h)
+            if vision.is_blank(panel) or not chamber_bot.gui_is_open(panel, cfg):
                 self.engine.events.put(("banner", {"text": self.tr("n_no_grey"), "color": RED}))
                 return
-            ys, xs = np.where(grey)
-            x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
-            cfg["anchor"] = {"x": x0, "y": y0, "w": x1 - x0 + 1, "h": y1 - y0 + 1}
-            chamber_bot.save_config(cfg, chamber_bot.DEFAULT_CONFIG)
-            self.engine.events.put(("log", {"level": "INFO", "message": f"anchor fitted: {cfg['anchor']}"}))
-            self.engine.events.put(("banner", {"text": self.tr("n_anchor_done"), "color": GREEN}))
+            meta = panel_match.save_template(panel, cfg["rois"], cfg["points"])
+            self.engine.events.put(("log", {"level": "INFO",
+                                            "message": f"panel template saved: {meta['w']}x{meta['h']}"}))
+            self.engine.events.put(("banner", {"text": self.tr("template_saved"), "color": GREEN}))
         except Exception as exc:  # noqa: BLE001
             self.engine.events.put(("error", {"message": str(exc)}))
 
@@ -639,6 +965,32 @@ class App(ctk.CTk):
             self._banner_show(self.tr("calib_again"), AMBER)
 
     # ------------------------------------------------- +/- button calibration --
+    def _close_existing_editor(self):
+        ed = getattr(self, "_roi_editor", None)
+        if ed is not None:
+            try:
+                ed.win.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            self._roi_editor = None
+
+    def _auto_open_editor(self):
+        try:
+            self._close_existing_editor()
+            self._roi_editor = RoiEditor(self, self.tr)
+            _dbg("AUTOOPEN ok")
+        except Exception as exc:  # noqa: BLE001
+            _dbg(f"AUTOOPEN ERROR {exc}")
+
+    def _open_editor(self):
+        if self.engine.is_running():
+            self._banner_show(self.tr("n_stop_before"), AMBER)
+            return
+        # close any previous editor first so zones don't stack up
+        self._close_existing_editor()
+        # keep a reference so the editor (and its mouse bindings) isn't GC'd
+        self._roi_editor = RoiEditor(self, self.tr)
+
     def _calibrate_buttons(self):
         if self.engine.is_running():
             self._banner_show(self.tr("n_stop_before"), AMBER)
@@ -720,10 +1072,15 @@ class App(ctk.CTk):
             (roi_px(rois["luck_bar"]), "zone_luck", False),
             (roi_px(rois["fail_bar"]), "zone_fail", False),
         ]
-        x0, y0, x1, y1 = digit.DIGIT_ROI
-        rw, rh = digit.DIGIT_ROI_REF
-        sx, sy = panel_w / rw, panel_h / rh
-        zones.append(((int(x0 * sx), int(y0 * sy), int(x1 * sx), int(y1 * sy)), "zone_digit", False))
+        # digit zone comes from the saved config (ROI editor); fall back to default
+        digit_roi = rois.get("digit")
+        if digit_roi and len(digit_roi) == 4:
+            zones.append((roi_px(digit_roi), "zone_digit", False))
+        else:
+            x0, y0, x1, y1 = digit.DIGIT_ROI
+            rw, rh = digit.DIGIT_ROI_REF
+            sx, sy = panel_w / rw, panel_h / rh
+            zones.append(((int(x0 * sx), int(y0 * sy), int(x1 * sx), int(y1 * sy)), "zone_digit", False))
         for name, key in (("power_plus", "zone_plus"), ("power_minus", "zone_minus")):
             px, py = int(pts[name][0] * panel_w), int(pts[name][1] * panel_h)
             zones.append(((px - 10, py - 10, px + 10, py + 10), key, True))
@@ -898,10 +1255,15 @@ class App(ctk.CTk):
         elif event == "calib_btn_done":
             self.deiconify()
             self.btn_calibbtn.configure(state="normal", text=self.tr("btn_calib_buttons"))
+        elif event == "reanchored":
+            self._banner_show(
+                self.tr("reanchored", x=data.get("x", 0), y=data.get("y", 0)), GREEN)
 
 
 def main():
     app = App()
+    if "--open-editor" in sys.argv:
+        app.after(2000, app._auto_open_editor)
     app.mainloop()
 
 

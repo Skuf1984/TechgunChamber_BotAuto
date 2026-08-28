@@ -63,11 +63,12 @@ def run_calibration(cfg, hwnd, start_value, progress_cb=None, should_stop=None):
         """Grab the digit twice (second wins, guards a stale frame) and return
         (mask, ink_pixels). mask is None when nothing readable is found."""
         rect = vision.anchor_rect(window.client_rect_on_screen(hwnd), chamber_bot.anchor_tuple(cfg))
+        digit_roi = cfg.get("rois", {}).get("digit")
         mask = None
         with vision.ScreenCapture() as capture:
             for _ in range(2):
                 panel = capture.grab(*rect)
-                comps = digit.digit_components(digit.crop_digit(panel))
+                comps = digit.digit_components(digit.crop_digit(panel, digit_roi))
                 mask = max(comps, key=lambda m: int(m.sum())) if comps else None
                 time.sleep(0.12)
         return (mask, int(mask.sum())) if mask is not None else (None, 0)

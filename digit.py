@@ -16,25 +16,41 @@ import paths
 BASE_DIR = paths.DATA_DIR
 TEMPLATES_PATH = os.path.join(BASE_DIR, "digit_templates.json")
 
-# ROI tight around the power digit(s); excludes the scale (left), the frame (top)
-# and the stray vertical block at panel x316+ (right). Digit '1' sits ~x293-300,y32-45.
-# Expressed for the reference panel size; scaled to the actual panel so a GUI-scale
-# change doesn't shift the crop.
+# Fallback digit ROI (pixels) measured on a 398x324 panel. The live value is read
+# from config.json -> rois.digit (normalized), so the ROI editor can move it.
 DIGIT_ROI = (288, 27, 316, 51)
 DIGIT_ROI_REF = (398, 324)
 INK_MAX = 110     # digit ink is darker than this
 MIN_INK = 18      # ignore stray specks smaller than this
 
 
-def crop_digit(panel):
-    h, w = panel.shape[:2]
-    rw, rh = DIGIT_ROI_REF
-    if (w, h) == (rw, rh):
-        x0, y0, x1, y1 = DIGIT_ROI
-        return panel[y0:y1, x0:x1]
-    sx, sy = w / rw, h / rh
+def _default_digit_roi_norm():
     x0, y0, x1, y1 = DIGIT_ROI
-    return panel[int(y0 * sy):int(y1 * sy), int(x0 * sx):int(x1 * sx)]
+    rw, rh = DIGIT_ROI_REF
+    return [x0 / rw, y0 / rh, (x1 - x0) / rw, (y1 - y0) / rh]
+
+
+def load_digit_roi_norm():
+    """Normalized digit ROI [x,y,w,h] from config.json, falling back to default."""
+    try:
+        with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as fh:
+            roi = json.load(fh).get("rois", {}).get("digit")
+        if roi and len(roi) == 4:
+            return [float(v) for v in roi]
+    except Exception:  # noqa: BLE001
+        pass
+    return _default_digit_roi_norm()
+
+
+def crop_digit(panel, roi_norm=None):
+    if roi_norm is None:
+        roi_norm = load_digit_roi_norm()
+    h, w = panel.shape[:2]
+    x, y, ww, hh = roi_norm
+    x0, y0 = max(0, int(x * w)), max(0, int(y * h))
+    x1 = min(w, max(x0 + 1, int((x + ww) * w)))
+    y1 = min(h, max(y0 + 1, int((y + hh) * h)))
+    return panel[y0:y1, x0:x1]
 
 
 def _gray(crop):
@@ -123,9 +139,9 @@ def save_templates(templates, path=TEMPLATES_PATH):
         json.dump(raw, handle)
 
 
-def read_number(panel, templates):
+def read_number(panel, templates, roi_norm=None):
     """Return (value, confidence) or (None, 0.0). Handles 1- and 2-digit values."""
-    comps = digit_components(crop_digit(panel))
+    comps = digit_components(crop_digit(panel, roi_norm))
     if not comps:
         return None, 0.0
     if len(comps) > 2:

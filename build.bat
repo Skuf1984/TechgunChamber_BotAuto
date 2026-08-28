@@ -12,6 +12,8 @@ if errorlevel 1 (
 copy /y config.json dist\ >nul
 copy /y digit_templates.json dist\ >nul
 copy /y app_icon.ico dist\ >nul
+if exist panel_template.png copy /y panel_template.png dist\ >nul
+if exist panel_template.json copy /y panel_template.json dist\ >nul
 if not exist settings.json python -c "import settings; settings.save(settings.load())"
 copy /y settings.json dist\ >nul
 echo.

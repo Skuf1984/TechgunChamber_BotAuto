@@ -45,7 +45,7 @@
 ## Установка и запуск
 
 1. Скачай архив из [релизов](../../releases) (или собери из исходников, см. ниже).
-2. Распакуй **все файлы в одну папку** (`ChamberBot.exe`, `config.json`, `settings.json`, `digit_templates.json`, `app_icon.ico`).
+2. Распакуй **все файлы в одну папку** (`ChamberBot.exe`, `config.json`, `settings.json`, `digit_templates.json`, `app_icon.ico`, `panel_template.png`, `panel_template.json`).
 3. Запусти `ChamberBot.exe`.
 4. Открой Minecraft (оконный режим) и **открой GUI реакционной камеры**.
 
@@ -53,12 +53,16 @@
 
 ## Калибровка (один раз при смене окна/масштаба)
 
+Бот хранит **шаблон панели** (`panel_template.png`) — эталонный снимок камеры, под который подогнаны зоны. Если окно игры подвинули или изменили его размер, бот **сам заново находит панель по шаблону** (при любом GUI-масштабе) — зоны остаются на месте, ничего нажимать не нужно.
+
 Во вкладке **Инструменты**:
 
-1. **Найти окно и подогнать анкер** — обязательно после того, как подвинул/изменил окно игры.
-2. **Калибровать кнопки +/−** — если клики мимо: наведи курсор на кнопку `+` в игре → `SPACE`, затем на `−` → `SPACE`.
-3. **Калибровать цифры** — поставь мощность на известное значение, введи его; бот прокликает 0–9 и снимет шаблоны.
-4. **Проверка калибровки** — показывает все зоны поверх игры, чтобы убедиться, что они на месте.
+1. **Найти окно и подогнать анкер** — находит панель автоматически по шаблону (без SPACE). Если шаблона нет или панель не нашлась — спросит два угла камеры (наведи курсор → `SPACE`).
+2. **Ручная настройка зон** — самый надёжный способ: открывается снимок панели, на котором можно **перетаскивать прямоугольники зон и кнопки `+`/`−` мышкой** (тяни за квадратик в углу прямоугольника, чтобы изменить размер). Нажми «Сохранить».
+3. **Запомнить шаблон панели** — сохрани текущую (идеально подогнанную) панель как эталон, чтобы автопоиск равнялся по ней. Жми после ручной подгонки зон.
+4. **Калибровать кнопки +/−** — если клики мимо: наведи курсор на кнопку `+` в игре → `SPACE`, затем на `−` → `SPACE`.
+5. **Калибровать цифры** — поставь мощность на известное значение, введи его; бот прокликает 0–9 и снимет шаблоны.
+6. **Проверка калибровки** — показывает все зоны поверх игры, чтобы убедиться, что они на месте.
 
 ## Горячие клавиши
 
@@ -80,7 +84,7 @@ pyinstaller --noconfirm --onefile --windowed --name ChamberBot ^
   --collect-all customtkinter --collect-all pystray ^
   --hidden-import cv2 --hidden-import numpy --hidden-import PIL --hidden-import winotify gui.py
 ```
-(или просто запусти `build.bat`). Затем скопируй `config.json`, `settings.json`, `digit_templates.json`, `app_icon.ico` из корня в `dist\` рядом с exe.
+(или просто запусти `build.bat` — он сам скопирует данные в `dist\`). Вручную: скопируй `config.json`, `settings.json`, `digit_templates.json`, `app_icon.ico`, `panel_template.png`, `panel_template.json` из корня в `dist\` рядом с exe.
 
 Проверка логики без игры: `python selftest.py`.
 
@@ -95,6 +99,8 @@ pyinstaller --noconfirm --onefile --windowed --name ChamberBot ^
 | `digit.py` | распознавание цифры мощности по шаблонам |
 | `mouse.py` | клики мышью и хоткеи |
 | `window.py` | поиск окна, фокус, координаты |
+| `panel_match.py` | поиск панели по сохранённому шаблону (автоподгонка анкера при любом размере окна) |
+| `find_anchor.py` | переопределение анкера вручную (шаблон → запасной поиск по серому) |
 | `calibrate_digits.py` | калибровка шаблонов цифр |
 | `i18n.py` | строки RU/EN |
 | `settings.py` / `config.json` | настройки и калибровки |
@@ -136,7 +142,9 @@ The bot **reads the chamber UI from the screen** (pixel capture of the window) a
 
 ## Calibration (once, after moving/resizing the game window)
 
-In the **Tools** tab: **Find window & fit anchor**, then (if needed) **Calibrate +/− buttons**, **Calibrate digits**, and **Verify calibration** to see all zones overlaid on the game.
+The bot keeps a **panel template** (`panel_template.png`) — a reference snapshot of the chamber the zones were fitted to. When the game window is moved or resized, the bot **re-finds the panel by template automatically** (at any GUI scale), so the zones stay in place and you don't have to press anything.
+
+In the **Tools** tab: **Find window & fit anchor** (locates the panel from the template automatically, no SPACE needed; falls back to two-corner manual mode when there is no template); **Adjust zones manually** (most reliable — drag the zone rectangles and +/- buttons with the mouse, then Save); **Save panel template** (store the current perfectly-fitted panel as the reference — do this after manual adjustments); **Calibrate +/− buttons**; **Calibrate digits**; and **Verify calibration** to see all zones overlaid on the game.
 
 ## Hotkeys
 
@@ -149,7 +157,7 @@ Requires **Python 3.10+** on Windows. Install deps and run PyInstaller (see `bui
 pip install customtkinter pyinstaller pillow numpy opencv-python pystray winotify
 build.bat
 ```
-Then copy `config.json`, `settings.json`, `digit_templates.json`, `app_icon.ico` next to the produced exe. Run `python selftest.py` to test the logic without the game.
+Then copy `config.json`, `settings.json`, `digit_templates.json`, `app_icon.ico`, `panel_template.png`, `panel_template.json` next to the produced exe (`build.bat` does this for you). Run `python selftest.py` to test the logic without the game.
 
 ---
 
