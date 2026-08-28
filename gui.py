@@ -1078,9 +1078,12 @@ class App(ctk.CTk):
             rw, rh = digit.DIGIT_ROI_REF
             sx, sy = panel_w / rw, panel_h / rh
             zones.append(((int(x0 * sx), int(y0 * sy), int(x1 * sx), int(y1 * sy)), "zone_digit", False))
+        # the in-game +/- buttons scale with the panel, so the marker box must too
+        # (reference: a 20x20 px button on the 341x320 panel the zones were tuned on)
+        bx, by = max(3, int(round(10 * panel_w / 341))), max(3, int(round(10 * panel_h / 320)))
         for name, key in (("power_plus", "zone_plus"), ("power_minus", "zone_minus")):
             px, py = int(pts[name][0] * panel_w), int(pts[name][1] * panel_h)
-            zones.append(((px - 10, py - 10, px + 10, py + 10), key, True))
+            zones.append(((px - bx, py - by, px + bx, py + by), key, True))
         return zones
 
     def _verify_calibration(self):
@@ -1254,9 +1257,10 @@ class App(ctk.CTk):
             if is_point:
                 # corner brackets only: the button centre must stay click-through
                 cx, cy = (rx0 + rx1) // 2, (ry0 + ry1) // 2
-                arm = 6
+                off = max(4, (rx1 - rx0) // 2)
+                arm = max(3, off * 3 // 5)
                 for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
-                    bx, by = cx + sx * 10, cy + sy * 10
+                    bx, by = cx + sx * off, cy + sy * off
                     draw.line([(bx, by), (bx - sx * arm, by)], fill=(255, 200, 0), width=2)
                     draw.line([(bx, by), (bx, by - sy * arm)], fill=(255, 200, 0), width=2)
             else:
