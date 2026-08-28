@@ -184,12 +184,17 @@ def bar_level(img, filled_color, empty_color, orientation="up"):
     return float(line_filled.sum()) / float(total)
 
 
-def bar_edge(img, filled_color, empty_color, orientation="up", edge_slack=2):
+def bar_edge(img, filled_color, empty_color, orientation="up", edge_slack=2, max_gap=0):
     """Fraction 0..1 measured to the outermost contiguous fill edge.
 
     More stable than bar_level for bars drawn with tick marks or gradients.
     `edge_slack` tolerates the 1-2px GUI frame that a hand-drawn ROI usually
     swallows at the filling end - without it a one pixel offset reads as zero.
+
+    `max_gap` bridges up to N consecutive non-fill lines inside the run. The
+    power scale draws dark tick lines across the fill every few rows; without
+    bridging the reading always stops at the first tick (~9%) no matter how
+    full the bar actually is.
     """
     filled = _dist2(img, filled_color)
     empty = _dist2(img, empty_color)
@@ -214,14 +219,19 @@ def bar_edge(img, filled_color, empty_color, orientation="up", edge_slack=2):
         start += 1
 
     run = 0
+    gap = 0
     for value in lines[start:]:
-        if not value:
-            break
-        run += 1
+        if value:
+            run += gap + 1
+            gap = 0
+        else:
+            gap += 1
+            if gap > max_gap:
+                break
     return float(run) / float(total)
 
 
-def bar_fill_multi(img, fill_colors, empty_color, orientation="up", edge_slack=2):
+def bar_fill_multi(img, fill_colors, empty_color, orientation="up", edge_slack=2, max_gap=0):
     """Read a bar whose fill colour signals state (green = matched, red = mismatch).
 
     Returns (fraction, name_of_matching_colour). The colour that produces the
@@ -231,7 +241,7 @@ def bar_fill_multi(img, fill_colors, empty_color, orientation="up", edge_slack=2
     best_fraction = 0.0
     best_name = "unknown"
     for name, color in fill_colors.items():
-        value = bar_edge(img, color, empty_color, orientation, edge_slack)
+        value = bar_edge(img, color, empty_color, orientation, edge_slack, max_gap)
         if value > best_fraction:
             best_fraction = value
             best_name = name

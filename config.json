@@ -2,8 +2,8 @@
   "window_title": "Minecraft",
   "poll_interval": 0.35,
   "anchor": {
-    "x": 272,
-    "y": 79,
+    "x": 172,
+    "y": 101,
     "w": 341,
     "h": 320
   },
@@ -51,9 +51,9 @@
   },
   "colors": {
     "power_fill_ok": [
-      128,
+      0,
       255,
-      128
+      0
     ],
     "power_fill_bad": [
       255,

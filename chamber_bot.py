@@ -191,11 +191,14 @@ def read_state(frame, cfg):
     if not state.gui_open:
         return state
 
+    # max_gap bridges the dark tick lines drawn across the scale every few rows -
+    # without it the contiguous run always stops at the first tick (~9%).
     state.power_fill, state.power_color = vision.bar_fill_multi(
         vision.crop(frame, rois["power_scale"]),
         {"ok": colors["power_fill_ok"], "bad": colors["power_fill_bad"]},
         colors["power_empty"],
         "up",
+        max_gap=3,
     )
 
     marker = marker_fraction(frame, cfg)
