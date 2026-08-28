@@ -348,6 +348,12 @@ class App(ctk.CTk):
         self._tray_hint_shown = False
         self._rebuilding = False
 
+        self._overlay_active = False
+        self._overlay_win = None
+        self._overlay_canvas = None
+        self._overlay_job = None
+        self._overlay_hotkey = None
+
         self.title(APP_TITLE)
         self.geometry("760x700")
         self.minsize(680, 620)
@@ -606,7 +612,7 @@ class App(ctk.CTk):
 
         row3 = ctk.CTkFrame(card, fg_color="transparent")
         row3.pack(fill="x", padx=18, pady=(4, 14))
-        row3.grid_columnconfigure((0, 1), weight=1, uniform="tool3")
+        row3.grid_columnconfigure((0, 1, 2), weight=1, uniform="tool3")
         self.btn_editor = ctk.CTkButton(row3, text=self.tr("btn_editor"), height=52,
                                         fg_color=CARD2, hover_color=LINE, font=bf(13),
                                         command=self._open_editor)
@@ -619,6 +625,12 @@ class App(ctk.CTk):
         self.btn_template.grid(row=0, column=1, padx=5, sticky="ew")
         self._glow(self.btn_template, GREEN)
         ToolTip(self.btn_template, lambda: self.tr("tip_template"))
+        self.btn_overlay = ctk.CTkButton(row3, text=self.tr("btn_overlay"), height=52,
+                                         fg_color=CARD2, hover_color=LINE, font=bf(13),
+                                         command=self._toggle_overlay)
+        self.btn_overlay.grid(row=0, column=2, padx=5, sticky="ew")
+        self._glow(self.btn_overlay, AMBER)
+        ToolTip(self.btn_overlay, lambda: self.tr("tip_overlay"))
 
     # ------------------------------------------------------------------ log --
     def _build_log(self):
@@ -1041,23 +1053,9 @@ class App(ctk.CTk):
             q.put(("calib_btn_done", {}))
 
     # --------------------------------------------------- calibration preview --
-    def _verify_calibration(self):
-        from PIL import Image, ImageDraw, ImageFont, ImageTk
-
-        try:
-            cfg = chamber_bot.load_config(chamber_bot.DEFAULT_CONFIG)
-            hwnd = window.find_window(cfg["window_title"])
-            left, top, panel_w, panel_h = vision.anchor_rect(
-                window.client_rect_on_screen(hwnd), chamber_bot.anchor_tuple(cfg))
-            with vision.ScreenCapture() as capture:
-                panel = capture.grab(left, top, panel_w, panel_h)
-        except Exception as exc:  # noqa: BLE001
-            self._banner_show(f"{exc}", RED)
-            return
-        if vision.is_blank(panel):
-            self._banner_show(self.tr("n_no_grey"), RED)
-            return
-
+    def _zones_for(self, cfg, panel_w, panel_h):
+        """Zone rectangles in panel pixels, shared by 'Verify calibration' and the
+        persistent overlay. Returns a list of (rect, description_key, is_point)."""
         rois = cfg["rois"]
         pts = cfg["points"]
 
@@ -1065,7 +1063,6 @@ class App(ctk.CTk):
             x, y, w, h = roi
             return (int(x * panel_w), int(y * panel_h), int((x + w) * panel_w), int((y + h) * panel_h))
 
-        # (rect, description_key, is_point)
         zones = [
             (roi_px(rois["power_scale"]), "zone_power_scale", False),
             (roi_px(rois["power_marker"]), "zone_power_marker", False),
@@ -1084,6 +1081,26 @@ class App(ctk.CTk):
         for name, key in (("power_plus", "zone_plus"), ("power_minus", "zone_minus")):
             px, py = int(pts[name][0] * panel_w), int(pts[name][1] * panel_h)
             zones.append(((px - 10, py - 10, px + 10, py + 10), key, True))
+        return zones
+
+    def _verify_calibration(self):
+        from PIL import Image, ImageDraw, ImageFont, ImageTk
+
+        try:
+            cfg = chamber_bot.load_config(chamber_bot.DEFAULT_CONFIG)
+            hwnd = window.find_window(cfg["window_title"])
+            left, top, panel_w, panel_h = vision.anchor_rect(
+                window.client_rect_on_screen(hwnd), chamber_bot.anchor_tuple(cfg))
+            with vision.ScreenCapture() as capture:
+                panel = capture.grab(left, top, panel_w, panel_h)
+        except Exception as exc:  # noqa: BLE001
+            self._banner_show(f"{exc}", RED)
+            return
+        if vision.is_blank(panel):
+            self._banner_show(self.tr("n_no_grey"), RED)
+            return
+
+        zones = self._zones_for(cfg, panel_w, panel_h)
 
         img = Image.fromarray(panel.astype("uint8"))
         draw = ImageDraw.Draw(img)
@@ -1150,6 +1167,104 @@ class App(ctk.CTk):
         ctk.CTkButton(legend, text=self.tr("verify_close"), fg_color=ACCENT, hover_color=ACCENT_H,
                       command=close_all).pack(pady=(2, 12))
         self.after(20000, close_all)
+
+    # --------------------------------------------------- persistent zone overlay
+    OVERLAY_KEY = "#010203"  # colour-keyed pixels are invisible AND click-through
+
+    def _toggle_overlay(self):
+        if self._overlay_active:
+            self._overlay_stop()
+            self._banner_show(self.tr("overlay_off"), MUTED)
+        else:
+            self._overlay_start()
+
+    def _overlay_start(self):
+        try:
+            win = tk.Toplevel(self)
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            win.configure(bg=self.OVERLAY_KEY)
+            win.attributes("-transparentcolor", self.OVERLAY_KEY)
+            canvas = tk.Canvas(win, bg=self.OVERLAY_KEY, highlightthickness=0, bd=0)
+            canvas.pack(fill="both", expand=True)
+        except tk.TclError as exc:
+            self._banner_show(str(exc), RED)
+            return
+        self._overlay_win = win
+        self._overlay_canvas = canvas
+        self._overlay_photo = None
+        self._overlay_active = True
+        self._overlay_hotkey = mouse.HotkeyEdge("F7")
+        self._banner_show(self.tr("overlay_on"), GREEN)
+        self._overlay_tick()
+
+    def _overlay_stop(self):
+        self._overlay_active = False
+        if self._overlay_job is not None:
+            try:
+                self.after_cancel(self._overlay_job)
+            except Exception:  # noqa: BLE001
+                pass
+            self._overlay_job = None
+        if self._overlay_win is not None:
+            try:
+                self._overlay_win.destroy()
+            except tk.TclError:
+                pass
+            self._overlay_win = None
+        self._overlay_canvas = None
+
+    def _overlay_tick(self):
+        self._overlay_job = None
+        if not self._overlay_active:
+            return
+        if self._overlay_hotkey is not None and self._overlay_hotkey.pressed("F7"):
+            self._overlay_stop()
+            self._banner_show(self.tr("overlay_off"), MUTED)
+            return
+        try:
+            cfg = chamber_bot.load_config(chamber_bot.DEFAULT_CONFIG)
+            hwnd = window.find_window(cfg["window_title"])
+            if not window.is_minimized(hwnd):
+                left, top, panel_w, panel_h = vision.anchor_rect(
+                    window.client_rect_on_screen(hwnd), chamber_bot.anchor_tuple(cfg))
+                self._overlay_draw(cfg, left, top, panel_w, panel_h)
+        except Exception:  # noqa: BLE001 - the overlay must never crash the app
+            pass
+        if self._overlay_active:
+            self._overlay_job = self.after(700, self._overlay_tick)
+
+    def _overlay_draw(self, cfg, left, top, panel_w, panel_h):
+        from PIL import Image, ImageDraw, ImageFont, ImageTk
+
+        win, canvas = self._overlay_win, self._overlay_canvas
+        if win is None or canvas is None or panel_w < 40 or panel_h < 40:
+            return
+        win.geometry(f"{panel_w}x{panel_h}+{left}+{top}")
+        canvas.configure(width=panel_w, height=panel_h)
+
+        img = Image.new("RGB", (panel_w, panel_h), self.OVERLAY_KEY)
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("arial.ttf", 16)
+        except Exception:  # noqa: BLE001
+            font = ImageFont.load_default()
+        for i, (rect, _key, is_point) in enumerate(self._zones_for(cfg, panel_w, panel_h), start=1):
+            rx0, ry0, rx1, ry1 = rect
+            if is_point:
+                # corner brackets only: the button centre must stay click-through
+                cx, cy = (rx0 + rx1) // 2, (ry0 + ry1) // 2
+                arm = 6
+                for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+                    bx, by = cx + sx * 10, cy + sy * 10
+                    draw.line([(bx, by), (bx - sx * arm, by)], fill=(255, 200, 0), width=2)
+                    draw.line([(bx, by), (bx, by - sy * arm)], fill=(255, 200, 0), width=2)
+            else:
+                draw.rectangle([rx0, ry0, rx1, ry1], outline=(255, 40, 40), width=2)
+                draw.text((rx0 + 3, max(0, ry0 + 2)), str(i), fill=(255, 40, 40), font=font)
+        self._overlay_photo = ImageTk.PhotoImage(img)
+        canvas.delete("all")
+        canvas.create_image(0, 0, anchor="nw", image=self._overlay_photo)
 
     # --------------------------------------------------------------- tray/etc
     def _hide_to_tray(self):
