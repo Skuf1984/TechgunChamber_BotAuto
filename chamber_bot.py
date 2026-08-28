@@ -276,6 +276,7 @@ class Controller:
         self.hwnd = hwnd
         self.enabled = enabled
         self._last_action = 0.0
+        self.interrupted = None  # callable; the watchdog wires its stop/quit check in
         control = cfg["control"]
         self._interval = float(control["action_interval"])
         self._require_foreground = bool(control["require_foreground"])
@@ -295,11 +296,16 @@ class Controller:
         return vision.point_in(rect, point)
 
     def press_now(self, name, times=1, gap=0.07):
-        """Ignores the rate limiter - used by the homing routine."""
+        """Ignores the rate limiter - used by the homing routine. Checks the
+        interrupt hook between clicks so Stop/F10 lands mid-burst instead of
+        waiting for a 12-click homing run to finish."""
         if self.blocked_reason():
             return False
         x, y = self._screen_point(name)
-        for _ in range(max(1, int(times))):
+        for i in range(max(1, int(times))):
+            if i and self.interrupted is not None and self.interrupted():
+                log.info("click burst interrupted after %d click(s)", i)
+                return False
             mouse.click(x, y)
             time.sleep(gap)
         self._last_action = time.time()
@@ -439,6 +445,7 @@ class Watchdog:
         self.capture = vision.ScreenCapture()
         self.hwnd = window.find_window(cfg["window_title"])
         self.controller = Controller(cfg, self.hwnd, control_enabled)
+        self.controller.interrupted = self._interrupted
         self.alerter = Alerter(cfg)
         self.regulator = PowerRegulator(cfg, self.controller, self.alerter)
         hk = hotkeys or {"toggle_control": "F8", "pause": "F9", "quit": "F10"}
@@ -474,6 +481,19 @@ class Watchdog:
     def request_stop(self, reason="user_stop"):
         self.stop_reason = self.stop_reason or reason
         self._stop_requested = True
+
+    def _interrupted(self):
+        """Stop requested or quit hotkey tapped. Checked between the clicks of a
+        long burst (power reset / homing) so Stop and F10 don't have to wait for
+        the whole run to finish."""
+        if self._stop_requested:
+            return True
+        quit_key = self.hotkeys.get("quit", "F10")
+        if self.keys.pressed(quit_key):
+            log.info("%s - shutting down", quit_key)
+            self.stop_reason = self.stop_reason or "user_quit"
+            return True
+        return False
 
     def close(self):
         self.capture.close()

@@ -110,7 +110,11 @@ def key_down(name):
     code = VK.get(name.upper())
     if code is None:
         raise KeyError(f"unknown key {name!r}")
-    return bool(user32.GetAsyncKeyState(code) & 0x8000)
+    state = user32.GetAsyncKeyState(code)
+    # 0x8000 = currently held; 0x0001 = pressed since the previous query. Without
+    # the second bit a quick tap that lands between two polls (~0.4s apart in the
+    # watchdog loop) is lost entirely - that's why F8/F9/F10 felt unresponsive.
+    return bool(state & 0x8001)
 
 
 def scan_pressed(skip_modifiers=True):
