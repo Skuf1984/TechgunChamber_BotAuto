@@ -13,6 +13,7 @@
 - **Сброс мощности**: после каждого крафта сам возвращает мощность к базовой (по умолчанию 3).
 - **Стоп при неудаче**: если крафт не удался — останавливается и сигналит.
 - **Уведомления**: баннер в окне + системный тост Windows + звук.
+- **Оверлей зон поверх игры**: постоянно рисует все зоны прямо на окне игры (включается кнопкой или `F7`) — клики проходят сквозь него.
 - **Трей**: сворачивается в трей; горячие клавиши `пауза` / `вкл-выкл контроль` / `выход` (переназначаются).
 - **Язык**: русский / английский (переключается кнопкой-флагом).
 
@@ -53,6 +54,7 @@
 4. **Калибровать кнопки +/−** — если клики мимо: наведи курсор на кнопку `+` в игре → `SPACE`, затем на `−` → `SPACE`.
 5. **Калибровать цифры** — поставь мощность на известное значение, введи его; бот прокликает 0–9 и снимет шаблоны.
 6. **Проверка калибровки** — показывает все зоны поверх игры, чтобы убедиться, что они на месте.
+7. **Оверлей зон поверх игры** — постоянно рисует зоны поверх окна игры, пока включён (вкл/выкл кнопкой или `F7`). Клики проходят сквозь оверлей, центр кнопок `+`/`−` остаётся свободным.
 
 ## Горячие клавиши
 
@@ -61,8 +63,9 @@
 | Вкл/выкл контроль (клики) | `F8` |
 | Пауза / продолжить | `F9` |
 | Выход из бота | `F10` |
+| Оверлей зон поверх игры | `F7` (фиксированная) |
 
-Переназначаются во вкладке **Настройки** → «Переназначить».
+Первые три переназначаются во вкладке **Настройки** → «Переназначить».
 
 ## Сборка из исходников
 
@@ -110,6 +113,7 @@ pyinstaller --noconfirm --onefile --windowed --name ChamberBot ^
 - **Power reset**: returns power to the base level (default 3) after each craft.
 - **Stop on failure**: stops and alerts if a craft fails.
 - **Notifications**: in-app banner + Windows toast + sound.
+- **Zone overlay over the game**: a persistent overlay keeps all zone boxes drawn right on the game window (toggle with the button or `F7`) — clicks pass through it.
 - **System tray**; hotkeys for pause / toggle control / quit (rebindable).
 - **Language**: Russian / English.
 
@@ -130,11 +134,11 @@ The bot **reads the chamber UI from the screen** (pixel capture of the window) a
 
 The bot keeps a **panel template** (`panel_template.png`) — a reference snapshot of the chamber the zones were fitted to. When the game window is moved or resized, the bot **re-finds the panel by template automatically** (at any GUI scale), so the zones stay in place and you don't have to press anything.
 
-In the **Tools** tab: **Find window & fit anchor** (locates the panel from the template automatically, no SPACE needed; falls back to two-corner manual mode when there is no template); **Adjust zones manually** (most reliable — drag the zone rectangles and +/- buttons with the mouse, then Save); **Save panel template** (store the current perfectly-fitted panel as the reference — do this after manual adjustments); **Calibrate +/− buttons**; **Calibrate digits**; and **Verify calibration** to see all zones overlaid on the game.
+In the **Tools** tab: **Find window & fit anchor** (locates the panel from the template automatically, no SPACE needed; falls back to two-corner manual mode when there is no template); **Adjust zones manually** (most reliable — drag the zone rectangles and +/- buttons with the mouse, then Save); **Save panel template** (store the current perfectly-fitted panel as the reference — do this after manual adjustments); **Calibrate +/− buttons**; **Calibrate digits**; **Verify calibration** (one-shot overlay of all zones); and **Zone overlay over game** (keeps the zone boxes drawn over the game window while enabled — toggle with the button or `F7`; clicks pass through it).
 
 ## Hotkeys
 
-Toggle control `F8`, Pause `F9`, Quit `F10` (rebindable in Settings).
+Toggle control `F8`, Pause `F9`, Quit `F10` (rebindable in Settings). Zone overlay toggle `F7` (fixed).
 
 ## Building from source
 
