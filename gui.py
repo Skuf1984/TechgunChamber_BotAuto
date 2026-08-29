@@ -519,14 +519,12 @@ class App(ctk.CTk):
         self.btn_stop.grid(row=0, column=2, padx=5, sticky="ew")
         self._glow(self.btn_stop, RED)
 
-        # translucent hotkey hints at the right edge of each run button
-        self._hk_hints = {}
-        for role, btn, bg in (("start", self.btn_start, ACCENT), ("pause", self.btn_pause, CARD2),
-                              ("quit", self.btn_stop, RED)):
-            hint = ctk.CTkLabel(row, text="", text_color=_blend(bg), font=bf(11), fg_color="transparent")
-            hint.place(in_=btn, relx=1.0, rely=0.5, anchor="e", x=-10)
-            hint.bind("<Button-1>", lambda _e, b=btn: b.invoke() if str(b.cget("state")) == "normal" else None)
-            self._hk_hints[role] = hint
+        # hotkey hints at the right edge of each run button, blended into the button
+        self._hk_hints = {
+            "start": self._attach_hint(self.btn_start, ACCENT, ACCENT_H),
+            "pause": self._attach_hint(self.btn_pause, CARD2, LINE),
+            "quit": self._attach_hint(self.btn_stop, RED, "#c73636"),
+        }
         self._update_hk_hints()
 
         swrow = ctk.CTkFrame(card, fg_color="transparent")
@@ -766,6 +764,26 @@ class App(ctk.CTk):
             self._banner_show(self.tr("n_stats_reset"), GREEN)
 
     # ---------------------------------------------------------------- hotkeys
+    def _attach_hint(self, btn, bg, hover):
+        """Hotkey hint label living INSIDE the run button. Its background is the
+        button's exact colour, so only the text is visible - a 'transparent' label
+        here would show the dark card behind and look like a stray rectangle. The
+        hover bindings keep the patch matched while the button is hovered."""
+        hint = ctk.CTkLabel(btn, text="", text_color=_blend(bg), font=hf(13), fg_color=bg, corner_radius=8)
+        hint.place(relx=1.0, rely=0.5, anchor="e", x=-12)
+        hint.bind("<Button-1>", lambda _e: btn.invoke() if str(btn.cget("state")) == "normal" else None)
+
+        def _enter(_e):
+            hint.configure(fg_color=hover)
+
+        def _leave(_e):
+            hint.configure(fg_color=bg)
+
+        for widget in (btn, hint):
+            widget.bind("<Enter>", _enter, add="+")
+            widget.bind("<Leave>", _leave, add="+")
+        return hint
+
     def _update_hk_hints(self):
         """Refresh the hotkey hints on the run buttons from the current bindings."""
         hk = self.settings.get("hotkeys") or {}
