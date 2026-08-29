@@ -60,12 +60,13 @@
 
 | Действие | По умолчанию |
 |----------|--------------|
+| Старт бота | `F6` |
 | Вкл/выкл контроль (клики) | `F8` |
 | Пауза / продолжить | `F9` |
 | Выход из бота | `F10` |
 | Оверлей зон поверх игры | `F7` (фиксированная) |
 
-Первые три переназначаются во вкладке **Настройки** → «Переназначить».
+Первые четыре переназначаются во вкладке **Настройки** → «Переназначить». Подсказки с клавишами показаны прямо на кнопках Старт/Пауза/Стоп на главной.
 
 ## Сборка из исходников
 
@@ -138,7 +139,7 @@ In the **Tools** tab: **Find window & fit anchor** (locates the panel from the t
 
 ## Hotkeys
 
-Toggle control `F8`, Pause `F9`, Quit `F10` (rebindable in Settings). Zone overlay toggle `F7` (fixed).
+Start `F6`, Toggle control `F8`, Pause `F9`, Quit `F10` (all rebindable in Settings). Zone overlay toggle `F7` (fixed). The bound keys are hinted right on the Start/Pause/Stop buttons on the Home tab.
 
 ## Building from source
 

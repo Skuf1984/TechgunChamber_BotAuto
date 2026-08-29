@@ -42,6 +42,14 @@ AMBER = "#f59e0b"
 TEXT = "#e9ebf2"
 MUTED = "#8b93a7"
 
+
+def _blend(color, other="#ffffff", t=0.55):
+    """Mix two #rrggbb colours - used for the translucent-looking button hints."""
+    def parts(c):
+        return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+    a, b = parts(color), parts(other)
+    return "#%02x%02x%02x" % tuple(int(x + (y - x) * t) for x, y in zip(a, b))
+
 HEAD = "Bahnschrift"
 BODY = "Segoe UI"
 MONO = "Cascadia Mono"
@@ -54,7 +62,7 @@ KEYSYM_MAP = {
     "Shift_L": "SHIFT", "Shift_R": "SHIFT", "Control_L": "CTRL", "Control_R": "CTRL",
     "Alt_L": "ALT", "Alt_R": "ALT", "Caps_Lock": "CAPSLOCK",
 }
-HOTKEY_ROLES = [("toggle_control", "hk_toggle"), ("pause", "hk_pause"), ("quit", "hk_quit")]
+HOTKEY_ROLES = [("start", "hk_start"), ("toggle_control", "hk_toggle"), ("pause", "hk_pause"), ("quit", "hk_quit")]
 
 
 def hf(size, weight="bold"):
@@ -354,6 +362,11 @@ class App(ctk.CTk):
         self._overlay_job = None
         self._overlay_hotkey = None
 
+        self._calibrating = False
+        self._hk_hints = {}
+        self._start_hk_was = False
+        self.after(500, self._poll_start_hotkey)
+
         self.title(APP_TITLE)
         self.geometry("760x700")
         self.minsize(680, 620)
@@ -505,6 +518,16 @@ class App(ctk.CTk):
                                       hover_color="#c73636", font=hf(16), state="disabled", command=self._stop)
         self.btn_stop.grid(row=0, column=2, padx=5, sticky="ew")
         self._glow(self.btn_stop, RED)
+
+        # translucent hotkey hints at the right edge of each run button
+        self._hk_hints = {}
+        for role, btn, bg in (("start", self.btn_start, ACCENT), ("pause", self.btn_pause, CARD2),
+                              ("quit", self.btn_stop, RED)):
+            hint = ctk.CTkLabel(row, text="", text_color=_blend(bg), font=bf(11), fg_color="transparent")
+            hint.place(in_=btn, relx=1.0, rely=0.5, anchor="e", x=-10)
+            hint.bind("<Button-1>", lambda _e, b=btn: b.invoke() if str(b.cget("state")) == "normal" else None)
+            self._hk_hints[role] = hint
+        self._update_hk_hints()
 
         swrow = ctk.CTkFrame(card, fg_color="transparent")
         swrow.pack(fill="x", padx=18, pady=(2, 14))
@@ -743,6 +766,29 @@ class App(ctk.CTk):
             self._banner_show(self.tr("n_stats_reset"), GREEN)
 
     # ---------------------------------------------------------------- hotkeys
+    def _update_hk_hints(self):
+        """Refresh the hotkey hints on the run buttons from the current bindings."""
+        hk = self.settings.get("hotkeys") or {}
+        for role, hint in getattr(self, "_hk_hints", {}).items():
+            hint.configure(text=hk.get(role, ""))
+
+    def _poll_start_hotkey(self):
+        """Global start hotkey: works even when the bot is not running (the F8/F9/F10
+        keys only live inside the watchdog). The edge is consumed every tick so a
+        stale press can't fire a start later."""
+        down = False
+        try:
+            key = (self.settings.get("hotkeys") or {}).get("start", "F6")
+            down = mouse.key_down(key)
+            if (down and not self._start_hk_was and not self._rebuilding
+                    and self._rebind_role is None and not self._calibrating
+                    and not self.engine.is_running()):
+                self.toggle_run()
+        except Exception:  # noqa: BLE001 - a hotkey must never crash the GUI
+            down = False
+        self._start_hk_was = down
+        self.after(250, self._poll_start_hotkey)
+
     def _rebind(self, role):
         if self.engine.is_running():
             self._banner_show(self.tr("n_stop_before"), AMBER)
@@ -769,6 +815,7 @@ class App(ctk.CTk):
         self.engine.set_hotkey(role, name)
         self.settings = self.engine.settings
         self._hk_labels[role].configure(text=name)
+        self._update_hk_hints()
         self._banner_show(self.tr("n_bound", r=role, k=name), GREEN)
 
     def _rebind_cancel(self):
@@ -952,6 +999,7 @@ class App(ctk.CTk):
 
     def _start_calibration(self, start_value):
         self.btn_calib.configure(state="disabled", text="...")
+        self._calibrating = True
         self._calib_stop.clear()
         # hide our window so it can't cover the chamber +/- buttons while clicking
         self.withdraw()
@@ -978,6 +1026,7 @@ class App(ctk.CTk):
             q.put(("calib_done", {"value": None, "conf": 0.0, "count": 0}))
 
     def _on_calib_done(self, data):
+        self._calibrating = False
         self.deiconify()
         self.btn_calib.configure(state="normal", text=self.tr("btn_calib"))
         if data.get("value") is None:
@@ -1020,6 +1069,7 @@ class App(ctk.CTk):
             self._banner_show(self.tr("n_stop_before"), AMBER)
             return
         self.btn_calibbtn.configure(state="disabled", text="...")
+        self._calibrating = True
         self.withdraw()
         notify.toast(APP_TITLE, self.tr("calib_hidden"))
         threading.Thread(target=self._calib_buttons_worker, daemon=True).start()
@@ -1384,6 +1434,7 @@ class App(ctk.CTk):
         elif event == "calib_done":
             self._on_calib_done(data)
         elif event == "calib_btn_done":
+            self._calibrating = False
             self.deiconify()
             self.btn_calibbtn.configure(state="normal", text=self.tr("btn_calib_buttons"))
         elif event == "reanchored":

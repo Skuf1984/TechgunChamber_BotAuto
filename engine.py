@@ -59,11 +59,14 @@ class BotEngine:
         cfg["power"]["default_level"] = int(s["base_power"])
 
         try:
+            # "start" is polled by the GUI (it must work before the watchdog exists);
+            # keep it out of the watchdog so its key edge isn't consumed there.
+            watchdog_hotkeys = {k: v for k, v in s["hotkeys"].items() if k != "start"}
             watchdog = chamber_bot.Watchdog(
                 cfg,
                 control_enabled,
                 csv_enabled=True,
-                hotkeys=s["hotkeys"],
+                hotkeys=watchdog_hotkeys,
                 target_crafts=int(s["target_crafts"]),
                 stop_on_fail=bool(s["stop_on_fail"]),
                 emit=self._emit,
@@ -144,7 +147,7 @@ class BotEngine:
     def set_hotkey(self, role, key):
         self.settings["hotkeys"][role] = key.upper()
         settings_mod.save(self.settings)
-        if self.watchdog is not None:
+        if self.watchdog is not None and role != "start":
             self.watchdog.hotkeys[role] = key.upper()
 
     def reset_stats(self):

@@ -15,6 +15,7 @@ DEFAULTS = {
     "target_crafts": 0,          # 0 = unlimited
     "stop_on_fail": True,
     "hotkeys": {
+        "start": "F6",
         "toggle_control": "F8",
         "pause": "F9",
         "quit": "F10",
