@@ -141,6 +141,7 @@ def make_watchdog(cfg, target_crafts=0, stop_on_fail=True):
     watchdog.stop_on_fail = stop_on_fail
     watchdog.successes = 0
     watchdog.failures = 0
+    watchdog._run_successes = 0
     watchdog.stop_reason = None
     watchdog._idle_since = None
     watchdog._grey_polls = 0

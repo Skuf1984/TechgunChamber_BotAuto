@@ -459,6 +459,10 @@ class Watchdog:
         self.stop_on_fail = bool(stop_on_fail)
         self.successes = 0
         self.failures = 0
+        # successes made by THIS run only (Start -> Stop). successes/failures hold
+        # the lifetime total; the target must be counted against the run counter,
+        # otherwise an old lifetime total eats the target.
+        self._run_successes = 0
         self.stop_reason = None
         self._emit_cb = emit
         self.paused = False
@@ -594,13 +598,14 @@ class Watchdog:
             success = self._peak_luck >= self._peak_fail
             if success:
                 self.successes += 1
+                self._run_successes += 1
                 self.alerter.fire(
                     "craft_success", f"bars went grey, luck peaked at {self._peak_luck:.0%} - craft succeeded", logging.INFO
                 )
                 self._emit("craft_success", {"successes": self.successes, "peak_luck": self._peak_luck})
-                if self.target_crafts and self.successes >= self.target_crafts:
+                if self.target_crafts and self._run_successes >= self.target_crafts:
                     self.stop_reason = "target_reached"
-                    log.info("target of %d successful crafts reached - stopping", self.target_crafts)
+                    log.info("target of %d successful crafts reached this run - stopping", self.target_crafts)
             else:
                 self.failures += 1
                 self.alerter.fire(
@@ -650,7 +655,7 @@ class Watchdog:
         # Idle with the GUI open: while a run is in progress this usually means the
         # input slot is empty and needs a refill (manual feeding). Fires at most once
         # per alert cooldown, never every poll.
-        run_in_progress = not self.stop_reason and (self.target_crafts == 0 or self.successes < self.target_crafts)
+        run_in_progress = not self.stop_reason and (self.target_crafts == 0 or self._run_successes < self.target_crafts)
         if run_in_progress:
             if self._idle_since is None:
                 self._idle_since = state.timestamp
@@ -747,6 +752,7 @@ class Watchdog:
                     "reason": self.stop_reason,
                     "successes": self.successes,
                     "failures": self.failures,
+                    "run_successes": self._run_successes,
                 })
                 break
             time.sleep(interval)
