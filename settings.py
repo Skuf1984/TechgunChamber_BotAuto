@@ -36,6 +36,27 @@ def _deep_merge(base, override):
     return out
 
 
+def _int_in(value, default, lo, hi):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    return value if lo <= value <= hi else default
+
+
+def _sanitize(settings):
+    """Clamp the editable numbers to sane ranges so a hand-edited or corrupted
+    settings.json can never crash the bot on start."""
+    settings["base_power"] = _int_in(settings.get("base_power"), DEFAULTS["base_power"], 0, 10)
+    settings["target_crafts"] = _int_in(settings.get("target_crafts"), DEFAULTS["target_crafts"], 0, 10**6)
+    stats = settings.get("stats") or {}
+    settings["stats"] = {
+        "successes": _int_in(stats.get("successes"), 0, 0, 10**9),
+        "failures": _int_in(stats.get("failures"), 0, 0, 10**9),
+    }
+    return settings
+
+
 def load(path=SETTINGS_PATH):
     if not os.path.exists(path):
         return json.loads(json.dumps(DEFAULTS))
@@ -44,7 +65,7 @@ def load(path=SETTINGS_PATH):
             data = json.load(handle)
     except (OSError, ValueError):
         return json.loads(json.dumps(DEFAULTS))
-    return _deep_merge(DEFAULTS, data)
+    return _sanitize(_deep_merge(DEFAULTS, data))
 
 
 def save(settings, path=SETTINGS_PATH):

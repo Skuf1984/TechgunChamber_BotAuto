@@ -697,20 +697,34 @@ class App(ctk.CTk):
         self.stat["total"][0].configure(text=f"{t['successes']}")
         self.stat["total"][1].configure(text=f"{t['failures']} {self.tr('failed')}")
 
+    def _read_int(self, entry, lo, hi, field_label):
+        """Strict integer reader for the editable number fields. Empty input,
+        letters, decimals and out-of-range values are rejected: the field is reset
+        to 0 and the banner explains which values are accepted. Returns None when
+        rejected so the caller just gives up."""
+        import re
+
+        raw = entry.get().strip()
+        value = None
+        if re.fullmatch(r"[+-]?\d+", raw):
+            value = int(raw)
+        if value is None or not (lo <= value <= hi):
+            entry.delete(0, "end")
+            entry.insert(0, "0")
+            self._banner_show(self.tr("n_bad_value", field=field_label, lo=lo, hi=hi), RED)
+            return None
+        return value
+
     def _apply_base(self):
-        try:
-            level = int(self.entry_base.get())
-        except ValueError:
-            self._banner_show(self.tr("n_need_int"), RED)
+        level = self._read_int(self.entry_base, 0, 10, self.tr("field_base"))
+        if level is None:
             return
         self.engine.set_base_power(level)
         self._banner_show(self.tr("n_base_set", v=level), GREEN)
 
     def _apply_target(self):
-        try:
-            target = int(self.entry_target.get())
-        except ValueError:
-            self._banner_show(self.tr("n_need_int"), RED)
+        target = self._read_int(self.entry_target, 0, 999999, self.tr("field_target"))
+        if target is None:
             return
         self.engine.set_target(target)
         self._banner_show(self.tr("n_target_set", v=target or self.tr("n_unlimited")), GREEN)
@@ -927,10 +941,8 @@ class App(ctk.CTk):
         entry.insert(0, "1")
 
         def begin():
-            try:
-                start_value = int(entry.get())
-            except ValueError:
-                self._banner_show(self.tr("calib_bad_start"), RED)
+            start_value = self._read_int(entry, 0, 10, self.tr("field_power"))
+            if start_value is None:
                 return
             dlg.destroy()
             self._start_calibration(start_value)
@@ -1364,7 +1376,7 @@ class App(ctk.CTk):
             self.settings = self.engine.settings
             self._update_stat_counters()
             if reason == "target_reached":
-                self._notify(APP_TITLE, self.tr("n_target_reached", v=data.get("successes", 0)), "success")
+                self._notify(APP_TITLE, self.tr("n_target_reached", v=data.get("run_successes", data.get("successes", 0))), "success")
             elif reason == "craft_failed":
                 self._notify(APP_TITLE, self.tr("n_craft_failed_stop"), "error")
             else:
