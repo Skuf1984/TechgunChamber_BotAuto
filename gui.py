@@ -365,6 +365,8 @@ class App(ctk.CTk):
         self._calibrating = False
         self._hk_hints = {}
         self._start_hk_was = False
+        self._mini_win = None
+        self._mini_mode = False
         self.after(500, self._poll_start_hotkey)
 
         self.title(APP_TITLE)
@@ -458,6 +460,12 @@ class App(ctk.CTk):
         ctk.CTkButton(header, text="\u2014", width=40, height=28, fg_color=CARD2, hover_color=LINE,
                       text_color=MUTED, command=self._hide_to_tray).grid(
             row=0, column=4, rowspan=2, padx=(0, 16), pady=14, sticky="e")
+
+        self.btn_mini = ctk.CTkButton(header, text="\u25a2", width=40, height=28, fg_color=CARD2,
+                                      hover_color=LINE, text_color=MUTED, command=self._enter_mini_mode)
+        self.btn_mini.grid(row=0, column=5, rowspan=2, padx=(0, 16), pady=14, sticky="e")
+        ToolTip(self.btn_mini, lambda: self.tr("tip_mini"))
+        self._glow(self.btn_mini, ACCENT)
 
     def _build_tabs(self):
         self.tabs = ctk.CTkTabview(self, fg_color=CARD, corner_radius=16, segmented_button_fg_color=CARD2,
@@ -882,6 +890,8 @@ class App(ctk.CTk):
             self.btn_stop.configure(state="disabled")
             self.btn_pause.configure(state="disabled", text=self.tr("btn_pause"))
             self.status_pill.configure(text="  " + self.tr("status_stopped") + "  ", fg_color="#3a3f4d")
+        if self._mini_mode:
+            self._sync_mini_running()
 
     # ------------------------------------------------------------------ tools
     def _find_anchor(self):
@@ -1350,6 +1360,122 @@ class App(ctk.CTk):
         canvas.delete("all")
         canvas.create_image(0, 0, anchor="nw", image=self._overlay_photo)
 
+    # ------------------------------------------------------------ mini mode --
+    def _enter_mini_mode(self):
+        if self._mini_win is not None:
+            self._exit_mini_mode()
+            return
+        self._mini_mode = True
+        self.withdraw()
+        win = ctk.CTkToplevel(self)
+        win.title(APP_TITLE)
+        win.geometry("250x170")
+        win.resizable(False, False)
+        win.configure(fg_color=BG)
+        win.attributes("-topmost", True)
+        try:
+            import os as _os
+
+            import paths as _paths
+
+            _ico = _os.path.join(_paths.DATA_DIR, "app_icon.ico")
+            if _os.path.exists(_ico):
+                win.iconbitmap(_ico)
+        except Exception:  # noqa: BLE001
+            pass
+
+        body = ctk.CTkFrame(win, fg_color=CARD, corner_radius=14)
+        body.pack(fill="both", expand=True, padx=8, pady=8)
+        body.grid_columnconfigure(0, weight=1)
+
+        self.mini_status = ctk.CTkLabel(body, text="  " + self.tr("status_stopped") + "  ",
+                                       text_color="#0d0f14", fg_color="#3a3f4d", corner_radius=12,
+                                       font=hf(13))
+        self.mini_status.pack(pady=(10, 4))
+
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=4)
+        row.grid_columnconfigure((0, 1), weight=1)
+        self.mini_power = ctk.CTkLabel(row, text="--", text_color=TEXT, font=hf(26))
+        self.mini_power.grid(row=0, column=0)
+        ctk.CTkLabel(row, text=self.tr("stat_power"), text_color=MUTED, font=bf(11)).grid(
+            row=1, column=0, pady=(0, 4))
+        self.mini_marker = ctk.CTkLabel(row, text="--", text_color=TEXT, font=hf(26))
+        self.mini_marker.grid(row=0, column=1)
+        ctk.CTkLabel(row, text=self.tr("stat_marker"), text_color=MUTED, font=bf(11)).grid(
+            row=1, column=1, pady=(0, 4))
+
+        self.mini_counts = ctk.CTkLabel(body, text="", text_color=MUTED, font=bf(12))
+        self.mini_counts.pack(pady=(0, 6))
+
+        btnrow = ctk.CTkFrame(body, fg_color="transparent")
+        btnrow.pack(fill="x", padx=10, pady=(0, 10))
+        btnrow.grid_columnconfigure((0, 1), weight=1)
+        self.mini_btn_toggle = ctk.CTkButton(btnrow, text=self.tr("btn_pause"), height=34,
+                                             fg_color=CARD2, hover_color=LINE, font=hf(13),
+                                             state="disabled", command=self._pause)
+        self.mini_btn_toggle.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+        self.mini_btn_stop = ctk.CTkButton(btnrow, text=self.tr("btn_stop"), height=34,
+                                           fg_color=RED, hover_color="#c73636", font=hf(13),
+                                           state="disabled", command=self._stop)
+        self.mini_btn_stop.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+        ctk.CTkButton(btnrow, text="\u21b1", width=40, height=34, fg_color=CARD2, hover_color=LINE,
+                      font=hf(13), command=self._exit_mini_mode).grid(
+            row=0, column=2, padx=(4, 0))
+        ToolTip(win, lambda: self.tr("mini_restore"))
+
+        self._mini_win = win
+        win.protocol("WM_DELETE_WINDOW", self._exit_mini_mode)
+        self._sync_mini_running()
+        self._update_mini_counts()
+
+    def _exit_mini_mode(self):
+        self._mini_mode = False
+        if self._mini_win is not None:
+            try:
+                self._mini_win.destroy()
+            except tk.TclError:
+                pass
+            self._mini_win = None
+        self.deiconify()
+        self.lift()
+
+    def _sync_mini_running(self):
+        if self._mini_win is None:
+            return
+        running = self.engine.is_running()
+        self.mini_btn_toggle.configure(state="normal" if running else "disabled")
+        self.mini_btn_stop.configure(state="normal" if running else "disabled")
+        self.mini_btn_toggle.configure(
+            text=self.tr("btn_resume") if getattr(self.engine.watchdog, "paused", False)
+            else self.tr("btn_pause"))
+
+    def _update_mini_counts(self):
+        if self._mini_win is None:
+            return
+        s = self.engine.session_stats()
+        self.mini_counts.configure(
+            text=f"{self.tr('stat_session')}: {s['successes']}  |  {self.tr('failed')}: {s['failures']}")
+
+    def _update_mini_state(self, data):
+        if self._mini_win is None:
+            return
+        status = data.get("status", "?")
+        if data.get("paused"):
+            self.mini_status.configure(text="  PAUSED  ", fg_color=AMBER)
+        else:
+            color = "#3a3f4d" if status in ("WAIT", "IDLE") else GREEN
+            self.mini_status.configure(text=f"  {status}  ", fg_color=color)
+        power = data.get("power_fill", 0)
+        color = "#3a3f4d" if data.get("power_color", "") == "unknown" else GREEN
+        if data.get("power_color") == "bad":
+            color = RED
+        self.mini_power.configure(text=f"{power * 100:.0f}%", text_color=color)
+        marker = data.get("marker")
+        self.mini_marker.configure(text=f"{marker * 100:.0f}%" if marker and marker >= 0 else "--")
+        self._update_mini_counts()
+        self._sync_mini_running()
+
     # --------------------------------------------------------------- tray/etc
     def _hide_to_tray(self):
         self.withdraw()
@@ -1421,6 +1547,8 @@ class App(ctk.CTk):
             self.settings["stats"]["successes"] = data.get("successes", self.settings["stats"]["successes"])
             self.settings["stats"]["failures"] = data.get("failures", self.settings["stats"]["failures"])
             self._update_stat_counters()
+            if self._mini_mode:
+                self._update_mini_state(data)
         elif event == "log":
             self._log(f"{data.get('level', '')} {data.get('message', '')}".strip())
         elif event == "banner":
@@ -1436,10 +1564,17 @@ class App(ctk.CTk):
             self._notify(APP_TITLE, self.tr("n_craft_fail"), "error")
         elif event == "paused":
             self.btn_pause.configure(text=self.tr("btn_resume") if data.get("paused") else self.tr("btn_pause"))
+            if self._mini_mode:
+                self._sync_mini_running()
         elif event == "waiting_input":
             self._notify(APP_TITLE, self.tr("n_add_ingredients"), "warn")
+        elif event == "craft_stalled":
+            self._notify(APP_TITLE, self.tr("n_craft_stalled", v=data.get("stalled_seconds", 0)), "error")
         elif event in ("stopped", "engine_stopped"):
             self._set_running_ui(False)
+            if self._mini_mode:
+                self._sync_mini_running()
+                self._update_mini_counts()
             reason = data.get("reason", "stopped")
             self.settings = self.engine.settings
             self._update_stat_counters()

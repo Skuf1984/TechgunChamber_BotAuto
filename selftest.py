@@ -145,6 +145,8 @@ def make_watchdog(cfg, target_crafts=0, stop_on_fail=True):
     watchdog.stop_reason = None
     watchdog._idle_since = None
     watchdog._grey_polls = 0
+    watchdog._craft_started_at = None
+    watchdog._stalled_fired = False
     watchdog.events = []
     watchdog._emit_cb = lambda event, data: watchdog.events.append((event, data))
     watchdog._saw_colored = False

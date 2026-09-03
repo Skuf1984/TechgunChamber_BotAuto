@@ -49,6 +49,7 @@ STRINGS = {
         "n_craft_success": "Крафт успешен",
         "n_craft_fail": "Крафт НЕ удался",
         "n_add_ingredients": "Добавь ингредиенты, чтобы продолжить",
+        "n_craft_stalled": "Крафт завис ({v:.0f} с без прогресса) — глянь камеру",
         "n_target_reached": "Цель достигнута! Предметов: {v}",
         "n_craft_failed_stop": "Крафт не удался — бот остановлен",
         "n_started": "Бот запущен (управление {v})",
@@ -117,6 +118,8 @@ STRINGS = {
         "zone_plus": "Кнопка + (прибавить мощность)",
         "zone_minus": "Кнопка - (убавить мощность)",
         "lang_tip": "Switch to English",
+        "tip_mini": "Мини-режим: компактное окно поверх игры",
+        "mini_restore": "Нажми ⫟, чтобы развернуть полное окно",
     },
     "en": {
         "app_title": "Reaction Chamber",
@@ -166,6 +169,7 @@ STRINGS = {
         "n_craft_success": "Craft succeeded",
         "n_craft_fail": "Craft FAILED",
         "n_add_ingredients": "Add ingredients to continue",
+        "n_craft_stalled": "Craft stalled ({v:.0f}s no progress) - check the chamber",
         "n_target_reached": "Target reached! Items: {v}",
         "n_craft_failed_stop": "Craft failed - bot stopped",
         "n_started": "Bot started (control {v})",
@@ -233,6 +237,8 @@ STRINGS = {
         "zone_plus": "+ button (raise power)",
         "zone_minus": "- button (lower power)",
         "lang_tip": "Переключить на русский",
+        "tip_mini": "Mini mode: compact always-on-top window",
+        "mini_restore": "Press ⫟ to restore the full window",
     },
 }
 

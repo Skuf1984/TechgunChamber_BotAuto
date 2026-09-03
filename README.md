@@ -56,6 +56,16 @@
 6. **Проверка калибровки** — показывает все зоны поверх игры, чтобы убедиться, что они на месте.
 7. **Оверлей зон поверх игры** — постоянно рисует зоны поверх окна игры, пока включён (вкл/выкл кнопкой или `F7`). Клики проходят сквозь оверлей, центр кнопок `+`/`−` остаётся свободным.
 
+## Мини-режим
+
+Кнопка `▢` в шапке сворачивает окно в компактную карточку **поверх игры** (always-on-top): статус, текущая мощность (краснеет при рассинхроне), метка-цель, счётчики сессии и кнопки Пауза/Стоп. Кнопка `⫟` возвращает полное окно.
+
+## Уведомления
+
+- **Крафт завершён / провален** — баннер, тост, звук.
+- **Крафт завис** — если крафт идёт дольше `stall_seconds` (по умолчанию 60 с) без завершения, бот бьёт тревогу: возможно, слот заблокирован или что-то пошло не так.
+- **Простой** — «добавь ингредиенты», если камера простаивает с открытым GUI больше 10 секунд.
+
 ## Горячие клавиши
 
 | Действие | По умолчанию |
@@ -115,6 +125,8 @@ pyinstaller --noconfirm --onefile --windowed --name ChamberBot ^
 - **Stop on failure**: stops and alerts if a craft fails.
 - **Notifications**: in-app banner + Windows toast + sound.
 - **Zone overlay over the game**: a persistent overlay keeps all zone boxes drawn right on the game window (toggle with the button or `F7`) — clicks pass through it.
+- **Mini mode**: the `▢` header button collapses the window into a compact always-on-top card — status, power (turns red on mismatch), marker, session counters and Pause/Stop buttons; `⫟` restores the full window.
+- **Stall detection**: a craft running longer than `stall_seconds` (60 s by default) without completing fires an alert — the chamber may be stuck.
 - **System tray**; hotkeys for pause / toggle control / quit (rebindable).
 - **Language**: Russian / English.
 

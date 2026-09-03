@@ -113,7 +113,6 @@
   "thresholds": {
     "gui_gray_min_fraction": 0.12,
     "craft_active_epsilon": 0.02,
-    "marker_tolerance": 70.0,
     "stall_seconds": 60.0
   },
   "control": {

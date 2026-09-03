@@ -239,18 +239,36 @@ class Alerter:
 
 
 class StateLog:
-    """Append-only CSV trace of every poll - the thing you grep after a failed craft."""
+    """Append-only CSV trace of every poll - the thing you grep after a failed craft.
+    Rotates at max_bytes (keeps .1/.2/.3 backups), same policy as chamber.log."""
 
     HEADER = [
         "time", "status", "power", "power_color", "marker", "offset",
         "luck", "fail",
     ]
+    MAX_BYTES = 2_000_000
+    BACKUPS = 3
 
     def __init__(self, path):
         self.path = path
         self._needs_header = not os.path.exists(path) or os.path.getsize(path) == 0
+        self._rotate_if_needed()
+
+    def _rotate_if_needed(self):
+        try:
+            if os.path.exists(self.path) and os.path.getsize(self.path) < self.MAX_BYTES:
+                return
+            for i in range(self.BACKUPS, 0, -1):
+                src = self.path if i == 1 else f"{self.path}.{i}"
+                dst = f"{self.path}.{i + 1}" if i < self.BACKUPS else f"{self.path}.{self.BACKUPS}"
+                if os.path.exists(src):
+                    os.replace(src, dst)
+            self._needs_header = True
+        except OSError:
+            pass
 
     def write(self, state, status):
+        self._rotate_if_needed()
         with open(self.path, "a", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
             if self._needs_header:
@@ -474,6 +492,8 @@ class Watchdog:
         self._reset_pending = False
         self._blank_warned = False
         self._idle_since = None
+        self._craft_started_at = None
+        self._stalled_fired = False
 
     def _emit(self, event, data=None):
         if self._emit_cb is not None:
@@ -580,6 +600,21 @@ class Watchdog:
         if active:
             self._saw_colored = True
             self._grey_polls = 0
+            self._idle_since = None
+            if self._craft_started_at is None:
+                self._craft_started_at = state.timestamp
+            stall_limit = float(self.cfg["thresholds"].get("stall_seconds", 60.0))
+            if not self._stalled_fired and state.timestamp - self._craft_started_at > stall_limit:
+                self._stalled_fired = True
+                self.alerter.fire(
+                    "craft_stalled",
+                    f"craft has been running for {state.timestamp - self._craft_started_at:.0f}s "
+                    f"without completing (stall limit {stall_limit:.0f}s)",
+                    logging.ERROR,
+                )
+                self._emit("craft_stalled", {
+                    "stalled_seconds": state.timestamp - self._craft_started_at,
+                })
             if state.luck_fill > self._peak_luck:
                 self._peak_luck = state.luck_fill
             if state.fail_fill > self._peak_fail:
@@ -617,6 +652,9 @@ class Watchdog:
             log.info("craft completed - queueing power reset to level %d", self.regulator.default_level)
             self._peak_luck = 0.0
             self._peak_fail = 0.0
+            self._idle_since = None
+            self._craft_started_at = None
+            self._stalled_fired = False
             if bool(self.cfg["power"]["reset_after_craft"]):
                 self._reset_pending = True
 
